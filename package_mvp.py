@@ -4,13 +4,15 @@ import tarfile
 from pathlib import Path
 import pandas as pd
 
-root = Path(os.environ["PTBXL_ROOT"])
+repo = Path(__file__).resolve().parent
+root = Path(os.environ.get("PTBXL_ROOT", repo / "data" / "ptbxl"))
 out = Path.home() / "scratch" / "ptbxl_mvp_5pct.tar.gz"
+out.parent.mkdir(parents=True, exist_ok=True)
 
 paths = set()
 
 for split in ["train_5", "val"]:
-    df = pd.read_csv(f"splits/{split}.csv")
+    df = pd.read_csv(repo / "splits" / f"{split}.csv")
     paths.update(df["filename_lr"])
 
 with tarfile.open(out, "w:gz") as archive:
