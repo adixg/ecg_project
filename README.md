@@ -10,8 +10,6 @@ pip install -r requirements.txt
 
 gh release download v1.0-data   # needs GitHub CLI, logged in (gh auth login)
 mkdir -p data/ptbxl && tar -xzf ptbxl_records100.tar.gz -C data/ptbxl
-
-python check_data.py   # add --full to read every record
 ```
 
 To use data stored elsewhere, set `PTBXL_ROOT` to the directory containing `records100/`.
