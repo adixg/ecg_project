@@ -1,6 +1,9 @@
 data/ptbxl/
 *.tar.gz
 .DS_Store
+outputs/
+__pycache__/
+*.pyc
 .venv/
 features/
 results/

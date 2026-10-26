@@ -1,0 +1,18 @@
+{
+  "data_root": "/home/hice1/asuresh321/scratch",
+  "split_dir": "splits",
+  "output_dir": "/home/hice1/asuresh321/scratch/ecg_outputs/cnn_bilstm_rerun",
+  "train_fraction": 5,
+  "seed": 42,
+  "epochs": 50,
+  "batch_size": 64,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0001,
+  "dropout": 0.3,
+  "lstm_hidden_size": 64,
+  "patience": 8,
+  "num_workers": 8,
+  "normalize": false,
+  "use_pos_weight": false,
+  "device": "cuda"
+}
