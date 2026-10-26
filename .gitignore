@@ -1,2 +1,6 @@
 data/ptbxl/
 *.tar.gz
+.DS_Store
+.venv/
+features/
+results/
