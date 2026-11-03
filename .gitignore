@@ -1,4 +1,4 @@
-data/ptbxl/
+data/
 *.tar.gz
 .DS_Store
 outputs/
@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 features/
 results/
+madhurFile
+artifacts/
