@@ -46,3 +46,16 @@ and test metrics, selected validation thresholds, and prediction CSVs under a
 fraction-and-seed-specific output directory. The final metrics include both the
 overall macro AUROC, AUPRC, and F1 and class-specific results for NORM, MI,
 STTC, CD, and HYP.
+
+## Classical ML baselines
+
+Random forest, XGBoost, and RBF-SVM on 300-d wavelet features live in
+`src/classical_ml/` (see its README). From the repository root:
+
+```bash
+python -m src.classical_ml.features     # builds features/features.npz (git-ignored)
+python -m src.classical_ml.classical    # writes reports/{rf,xgb,svm}/seed_42/
+```
+
+Results use the same layout and the same metrics code (`src/metrics.py`) as the
+CNN-BiLSTM, so the three model families can be compared directly.

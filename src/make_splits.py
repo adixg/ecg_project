@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parents[1]
 ROOT = Path(os.environ.get("PTBXL_ROOT", REPO / "data" / "ptbxl"))
 OUT = REPO / "splits"
 OUT.mkdir(parents=True, exist_ok=True)

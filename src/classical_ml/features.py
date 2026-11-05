@@ -1,6 +1,6 @@
 """Extract 300-d DWT features (12 leads * 5 bands * 5 stats) for every split record.
 
-Usage: python features.py            -> features/features.npz
+Usage (from repo root): python -m src.classical_ml.features  -> features/features.npz
 """
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ from joblib import Parallel, delayed
 from scipy.signal import butter, sosfiltfilt
 from scipy.stats import kurtosis
 
-REPO = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parents[2]
 ROOT = Path(os.environ.get("PTBXL_ROOT", REPO / "data" / "ptbxl"))
 OUT = REPO / "features" / "features.npz"
 

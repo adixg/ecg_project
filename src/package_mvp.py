@@ -4,7 +4,7 @@ import tarfile
 from pathlib import Path
 import pandas as pd
 
-repo = Path(__file__).resolve().parent
+repo = Path(__file__).resolve().parents[1]
 root = Path(os.environ.get("PTBXL_ROOT", repo / "data" / "ptbxl"))
 out = Path.home() / "scratch" / "ptbxl_mvp_5pct.tar.gz"
 out.parent.mkdir(parents=True, exist_ok=True)

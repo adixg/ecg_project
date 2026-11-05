@@ -1,0 +1,22 @@
+{
+  "model": "svm",
+  "train_fraction": 100,
+  "seed": 42,
+  "n_train": 17084,
+  "features": "12 leads x 5 db4 DWT bands x 5 stats = 300-d (src/classical_ml/features.py)",
+  "grid": {
+    "C": [
+      0.1,
+      1,
+      10
+    ],
+    "gamma": [
+      "scale",
+      0.001
+    ]
+  },
+  "selection_metric": "validation macro AUROC",
+  "class_weighting": "balanced (RF/SVM) or scale_pos_weight (XGB), per class, one-vs-rest",
+  "score": "sigmoid(decision_function)",
+  "seconds": 1074.6
+}
