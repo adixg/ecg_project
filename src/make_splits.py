@@ -1,4 +1,3 @@
-
 import os
 import ast
 from pathlib import Path
@@ -12,7 +11,8 @@ OUT = REPO / "splits"
 OUT.mkdir(parents=True, exist_ok=True)
 
 CLASSES = ["NORM", "MI", "STTC", "CD", "HYP"]
-SEED = 42
+SEEDS = [42, 0, 1]
+FRACTIONS = [1, 3, 5, 10, 25, 50, 100]
 
 # Load metadata
 df = pd.read_csv(ROOT / "ptbxl_database.csv")
@@ -49,31 +49,34 @@ assert set(train.patient_id).isdisjoint(val.patient_id)
 assert set(train.patient_id).isdisjoint(test.patient_id)
 assert set(val.patient_id).isdisjoint(test.patient_id)
 
-# Deterministic patient ordering
-patients = np.random.default_rng(SEED).permutation(
-    np.sort(train.patient_id.unique())
-)
-
 columns = [
     "ecg_id", "patient_id", "filename_lr",
     "strat_fold", *CLASSES
 ]
 
-def save(data, name):
-    path = OUT / f"{name}.csv"
+def save(data, out, name):
+    path = out / f"{name}.csv"
     data[columns].sort_values("ecg_id").to_csv(
         path, index=False
     )
-    print(f"{name}: {len(data)} ECGs")
+    print(f"{out.name}/{name}: {len(data)} ECGs")
     print(data[CLASSES].sum().to_dict())
 
-# Nested patient subsets
-for fraction in [5, 10, 25, 50, 100]:
-    n = int(np.ceil(len(patients) * fraction / 100))
-    subset = train[train.patient_id.isin(patients[:n])]
-    save(subset, f"train_{fraction}")
+for seed in SEEDS:
+    out = OUT / f"seed_{seed}"
+    out.mkdir(parents=True, exist_ok=True)
 
-# Fixed validation and test sets
-save(val, "val")
-save(test, "test")
+    # Deterministic patient ordering
+    patients = np.random.default_rng(seed).permutation(
+        np.sort(train.patient_id.unique())
+    )
+
+    for fraction in FRACTIONS:
+        n = int(np.ceil(len(patients) * fraction / 100))
+        subset = train[train.patient_id.isin(patients[:n])]
+        save(subset, out, f"train_{fraction}")
+
+    # Fixed validation and test sets
+    save(val, out, "val")
+    save(test, out, "test")
 
