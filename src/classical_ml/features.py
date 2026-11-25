@@ -1,7 +1,9 @@
 """Extract 300-d DWT features (12 leads * 5 bands * 5 stats) for every split record.
 
-Usage (from repo root): python -m src.classical_ml.features  -> features/features.npz
+Usage (from repo root): python -m src.classical_ml.features
+  -> artifacts/classical_ml/features/features.npz
 """
+import argparse
 import os
 from pathlib import Path
 
@@ -15,7 +17,9 @@ from scipy.stats import kurtosis
 
 REPO = Path(__file__).resolve().parents[2]
 ROOT = Path(os.environ.get("PTBXL_ROOT", REPO / "data" / "ptbxl"))
-OUT = REPO / "features" / "features.npz"
+OUT = REPO / "artifacts" / "classical_ml" / "features" / "features.npz"
+# train_100, val and test are identical across split seeds, so one seed covers all.
+SPLITS = REPO / "splits" / "seed_42"
 
 FS = 100
 WAVELET = "db4"
@@ -42,10 +46,12 @@ def extract(filename_lr):
 
 
 if __name__ == "__main__":
-    frames = [pd.read_csv(REPO / "splits" / f"{n}.csv") for n in ["train_100", "val", "test"]]
+    argparse.ArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
+    frames = [pd.read_csv(SPLITS / f"{n}.csv") for n in ["train_100", "val", "test"]]
     df = pd.concat(frames).drop_duplicates("ecg_id")
     X = Parallel(n_jobs=-1)(delayed(extract)(f) for f in df.filename_lr)
     X = np.nan_to_num(np.stack(X))
-    OUT.parent.mkdir(exist_ok=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(OUT, ecg_id=df.ecg_id.to_numpy(), X=X)
     print(f"Saved {X.shape} to {OUT}")

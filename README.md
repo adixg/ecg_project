@@ -50,12 +50,14 @@ STTC, CD, and HYP.
 ## Classical ML baselines
 
 Random forest, XGBoost, and RBF-SVM on 300-d wavelet features live in
-`src/classical_ml/` (see its README). From the repository root:
+`src/classical_ml/`. See the [classical ML README](src/classical_ml/README.md) for
+commands, flags, and outputs, and its
+[experiment summary](src/classical_ml/scratch.md) for results. From the repository
+root:
 
 ```bash
-python -m src.classical_ml.features     # builds features/features.npz (git-ignored)
-python -m src.classical_ml.classical    # writes reports/{rf,xgb,svm}/seed_42/
+python -m src.classical_ml.features     # builds the feature file
+python -m src.classical_ml.run --help
 ```
 
-Results use the same layout and the same metrics code (`src/metrics.py`) as the
-CNN-BiLSTM, so the three model families can be compared directly.
+Outputs go to `artifacts/classical_ml/` (git-ignored).
