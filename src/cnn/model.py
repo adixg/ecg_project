@@ -1,4 +1,4 @@
-"""A compact CNN-BiLSTM baseline for 12-lead ECG classification."""
+"""A compact CNN-BiLSTM for 12-lead ECG classification."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Train and evaluate the compact CNN-BiLSTM baseline on PTB-XL."""
+"""Train and evaluate the compact CNN-BiLSTM on PTB-XL."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import random
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -13,21 +14,25 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
+from tqdm.auto import tqdm
 
-from src.data import CLASS_NAMES, PTBXLDataset, make_data_loader
+from src.cnn.data import CLASS_NAMES, PTBXLDataset, make_data_loader
+from src.cnn.model import CNNBiLSTM
 from src.metrics import (
     compute_metrics,
     compute_per_class_metrics,
     find_f1_thresholds,
 )
-from src.model import CNNBiLSTM
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
 class TrainConfig:
     data_root: str
-    split_dir: str
-    output_dir: str
+    splits_dir: str
+    artifacts_dir: str
     train_fraction: int = 100
     seed: int = 42
     epochs: int = 50
@@ -43,19 +48,34 @@ class TrainConfig:
     device: str = "auto"
 
 
-def parse_args() -> TrainConfig:
+def parse_args(argv: list[str] | None = None) -> TrainConfig:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data-root",
         default=os.environ.get("PTBXL_ROOT", "data/ptbxl"),
-        help="Directory containing records100/.",
+        help="Directory containing records100/ (default: %(default)s).",
     )
-    parser.add_argument("--split-dir", default="splits")
-    parser.add_argument("--output-dir", default="outputs/cnn_bilstm")
     parser.add_argument(
-        "--train-fraction", type=int, choices=(5, 10, 25, 50, 100), default=100
+        "--splits-dir",
+        "--split-dir",
+        dest="splits_dir",
+        default="splits",
+        help="Base directory containing seed_<seed>/ folders (default: %(default)s).",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--artifacts-dir",
+        "--output-dir",
+        dest="artifacts_dir",
+        default="artifacts/cnn",
+        help="Root directory for generated CNN artifacts (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--train-fraction",
+        type=int,
+        choices=(1, 3, 5, 10, 25, 50, 100),
+        default=100,
+    )
+    parser.add_argument("--seed", type=int, choices=(0, 1, 42), default=42)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -71,7 +91,22 @@ def parse_args() -> TrainConfig:
         help="Use positive-class weights derived from train_100 for all fractions.",
     )
     parser.add_argument("--device", default="auto")
-    return TrainConfig(**vars(parser.parse_args()))
+    return TrainConfig(**vars(parser.parse_args(argv)))
+
+
+def project_path(value: str | Path) -> Path:
+    """Resolve relative CLI paths from the repository root."""
+
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def split_dir_for(config: TrainConfig) -> Path:
+    """Return the selected seed directory below the split base directory."""
+
+    base = project_path(config.splits_dir)
+    seed_name = f"seed_{config.seed}"
+    return base if base.name == seed_name else base / seed_name
 
 
 def set_seed(seed: int) -> None:
@@ -95,8 +130,8 @@ def resolve_device(requested: str) -> torch.device:
 
 
 def build_loaders(config: TrainConfig, device: torch.device) -> dict[str, object]:
-    split_dir = Path(config.split_dir)
-    data_root = Path(config.data_root)
+    split_dir = split_dir_for(config)
+    data_root = project_path(config.data_root)
     datasets = {
         "train": PTBXLDataset(
             split_dir / f"train_{config.train_fraction}.csv",
@@ -127,7 +162,7 @@ def build_loaders(config: TrainConfig, device: torch.device) -> dict[str, object
 def make_pos_weight(config: TrainConfig, device: torch.device) -> torch.Tensor | None:
     if not config.use_pos_weight:
         return None
-    full_train = pd.read_csv(Path(config.split_dir) / "train_100.csv")
+    full_train = pd.read_csv(split_dir_for(config) / "train_100.csv")
     positives = full_train[list(CLASS_NAMES)].sum(axis=0).to_numpy(np.float32)
     negatives = len(full_train) - positives
     return torch.as_tensor(negatives / np.maximum(positives, 1), device=device)
@@ -209,14 +244,21 @@ def save_predictions(
 
 def main() -> None:
     config = parse_args()
+    started = time.perf_counter()
     set_seed(config.seed)
     device = resolve_device(config.device)
-    output_dir = Path(config.output_dir) / (
-        f"fraction_{config.train_fraction}_seed_{config.seed}"
+    output_dir = project_path(config.artifacts_dir) / (
+        f"cnn_bilstm_seed{config.seed}_fraction{config.train_fraction}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    config_payload = {
+        **asdict(config),
+        "resolved_data_root": str(project_path(config.data_root)),
+        "resolved_split_dir": str(split_dir_for(config)),
+        "resolved_device": str(device),
+    }
     (output_dir / "config.json").write_text(
-        json.dumps(asdict(config), indent=2) + "\n"
+        json.dumps(config_payload, indent=2) + "\n"
     )
 
     loaders = build_loaders(config, device)
@@ -238,7 +280,12 @@ def main() -> None:
     best_val_auroc = -np.inf
     epochs_without_improvement = 0
 
-    for epoch in range(1, config.epochs + 1):
+    epoch_progress = tqdm(
+        range(1, config.epochs + 1),
+        desc=f"seed {config.seed}, fraction {config.train_fraction}%",
+        unit="epoch",
+    )
+    for epoch in epoch_progress:
         train_loss = train_one_epoch(
             model, loaders["train"], criterion, optimizer, device
         )
@@ -253,7 +300,12 @@ def main() -> None:
             **{f"val_{key}": value for key, value in val_metrics.items()},
         }
         history.append(epoch_result)
-        print(json.dumps(epoch_result))
+        epoch_progress.set_postfix(
+            train_loss=f"{train_loss:.4f}",
+            val_loss=f"{val_loss:.4f}",
+            val_auroc=f"{val_metrics['macro_auroc']:.4f}",
+        )
+        tqdm.write(json.dumps(epoch_result))
 
         if val_metrics["macro_auroc"] > best_val_auroc:
             best_val_auroc = val_metrics["macro_auroc"]
@@ -273,8 +325,13 @@ def main() -> None:
             if epochs_without_improvement >= config.patience:
                 break
 
-    (output_dir / "history.json").write_text(
+    (output_dir / "epoch_metrics.json").write_text(
         json.dumps(history, indent=2) + "\n"
+    )
+
+    config_payload["training_seconds"] = time.perf_counter() - started
+    (output_dir / "config.json").write_text(
+        json.dumps(config_payload, indent=2) + "\n"
     )
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
@@ -295,32 +352,37 @@ def main() -> None:
         test_targets, test_probabilities, thresholds=thresholds
     )
 
-    final_results = {
+    threshold_results = dict(zip(CLASS_NAMES, thresholds.tolist()))
+    validation_results = {
         "best_epoch": checkpoint["epoch"],
-        "thresholds": dict(zip(CLASS_NAMES, thresholds.tolist())),
-        "validation": {
-            "loss": val_loss,
-            **val_metrics,
-            "per_class": compute_per_class_metrics(
-                val_targets,
-                val_probabilities,
-                thresholds=thresholds,
-                class_names=CLASS_NAMES,
-            ),
-        },
-        "test": {
-            "loss": test_loss,
-            **test_metrics,
-            "per_class": compute_per_class_metrics(
-                test_targets,
-                test_probabilities,
-                thresholds=thresholds,
-                class_names=CLASS_NAMES,
-            ),
-        },
+        "loss": val_loss,
+        **val_metrics,
+        "per_class": compute_per_class_metrics(
+            val_targets,
+            val_probabilities,
+            thresholds=thresholds,
+            class_names=CLASS_NAMES,
+        ),
     }
-    (output_dir / "metrics.json").write_text(
-        json.dumps(final_results, indent=2) + "\n"
+    test_results = {
+        "best_epoch": checkpoint["epoch"],
+        "loss": test_loss,
+        **test_metrics,
+        "per_class": compute_per_class_metrics(
+            test_targets,
+            test_probabilities,
+            thresholds=thresholds,
+            class_names=CLASS_NAMES,
+        ),
+    }
+    (output_dir / "thresholds.json").write_text(
+        json.dumps(threshold_results, indent=2) + "\n"
+    )
+    (output_dir / "validation_metrics.json").write_text(
+        json.dumps(validation_results, indent=2) + "\n"
+    )
+    (output_dir / "test_metrics.json").write_text(
+        json.dumps(test_results, indent=2) + "\n"
     )
     save_predictions(
         output_dir / "validation_predictions.csv",
@@ -334,7 +396,18 @@ def main() -> None:
         test_targets,
         test_probabilities,
     )
-    print(json.dumps(final_results, indent=2))
+    print(
+        json.dumps(
+            {
+                "best_epoch": checkpoint["epoch"],
+                "thresholds": threshold_results,
+                "validation": validation_results,
+                "test": test_results,
+                "artifact_dir": str(output_dir),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

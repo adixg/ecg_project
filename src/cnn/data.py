@@ -1,4 +1,4 @@
-"""PTB-XL datasets and data-loader helpers."""
+"""PTB-XL datasets and data-loader helpers for the CNN-BiLSTM."""
 
 from __future__ import annotations
 

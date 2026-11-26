@@ -35,7 +35,7 @@ training data, seeds 0, 1, and 42 (63 runs). Settings were selected by
 - The 100% spread is not training-sample variance: all seeds share `train_100`.
 - In the 100% seed-42 runs, HYP is the weakest class by AUROC, AUPRC, and F1.
 - For reference, CNN-BiLSTM seed-42 test AUROC is 0.855 at 5% and 0.924 at 100%
-  (`reports/cnn_bilstm/seed_42/summary.csv`), about 0.06–0.07 above the best
+  (`src/cnn/scratch.md`), about 0.06–0.07 above the best
   classical model at those sizes.
 
 ## Caveats
