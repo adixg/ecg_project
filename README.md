@@ -48,3 +48,20 @@ python -m src.classical_ml.run --help
 ```
 
 Outputs go to `artifacts/classical_ml/` (git-ignored).
+
+## Transformer models
+
+The linear-patch and convolutional Transformer models live in
+`src/transformers/`. See the
+[Transformer README](src/transformers/README.md) for their architecture,
+historical presets, and commands, and the
+[Transformer experiment summary](src/transformers/scratch.md) for the complete
+two-model, three-seed, seven-fraction results. From the repository root:
+
+```bash
+python -m src.transformers.run --help
+python -m src.transformers.run --model v2 --seed 42 --train-percents 5
+```
+
+Generated Transformer runs go to `artifacts/transformers/` and are ignored by
+Git.

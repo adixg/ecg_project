@@ -40,6 +40,34 @@ def resolve_data_root(path: str | Path = "data/ptbxl") -> Path:
     return candidates[0]
 
 
+def resolve_split_dir(path: str | Path = "splits", seed: int = 42) -> Path:
+    """Resolve either the seeded split root or a legacy flat split directory.
+
+    The current repository layout is ``splits/seed_<seed>/``. Accepting a flat
+    directory keeps archived experiments and external split sets usable, while
+    rejecting a mismatched explicit ``seed_*`` directory prevents a run from
+    silently training on one subset and recording another seed.
+    """
+    base = project_path(path)
+    seed_name = f"seed_{seed}"
+    if base.name == seed_name:
+        selected = base
+    elif base.name.startswith("seed_"):
+        raise ValueError(
+            f"Split directory {base} does not match configured seed {seed}."
+        )
+    elif (base / seed_name).is_dir():
+        selected = base / seed_name
+    elif (base / "val.csv").is_file() and (base / "test.csv").is_file():
+        selected = base
+    else:
+        raise FileNotFoundError(
+            f"Expected {base / seed_name} or a flat split directory containing "
+            "val.csv and test.csv."
+        )
+    return selected.resolve()
+
+
 def save_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 

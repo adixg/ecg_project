@@ -17,13 +17,18 @@ from torch import nn
 
 from .data import (
     CLASSES, N_LEADS, SAMPLE_RATE, SIGNAL_LENGTH, PreparedData,
-    prepare_data, project_path, resolve_data_root, save_json, training_statistics,
+    prepare_data, project_path, resolve_data_root, resolve_split_dir, save_json,
+    training_statistics,
 )
 from .metrics import (
     choose_validation_thresholds, classification_metrics, save_predictions, summarize_metrics,
 )
 from .transformer_v1 import ECGTransformerV1
 from .transformer_v2 import ECGTransformerV2
+
+
+AVAILABLE_TRAIN_PERCENTS = (1, 3, 5, 10, 25, 50, 100)
+AVAILABLE_SPLIT_SEEDS = (0, 1, 42)
 
 
 @dataclass(frozen=True)
@@ -34,7 +39,7 @@ class TrainConfig:
     train_percents: tuple[int, ...] = (10, 25, 50)
     data_root: str = field(default_factory=lambda: os.environ.get("PTBXL_ROOT", "data/ptbxl"))
     split_dir: str = "splits"
-    output_dir: str = "artifacts/transformer_v2"
+    output_dir: str = "artifacts/transformers/v2"
     seed: int = 42
     batch_size: int = 64
     max_epochs: int = 30
@@ -61,8 +66,9 @@ class TrainConfig:
             raise ValueError("model_version must be v1 or v2")
         if not self.train_percents or tuple(sorted(set(self.train_percents))) != self.train_percents:
             raise ValueError("train_percents must be a nonempty, increasing tuple")
-        if not set(self.train_percents) <= {5, 10, 25, 50, 100}:
-            raise ValueError("Available training percentages: 5, 10, 25, 50, 100")
+        if not set(self.train_percents) <= set(AVAILABLE_TRAIN_PERCENTS):
+            available = ", ".join(map(str, AVAILABLE_TRAIN_PERCENTS))
+            raise ValueError(f"Available training percentages: {available}")
         if min(self.batch_size, self.max_epochs, self.threads, self.d_model, self.n_heads, self.n_layers) < 1:
             raise ValueError("Batch size, epochs, threads, and model dimensions must be positive")
         if self.d_model % self.n_heads or (self.model_version == "v2" and self.d_model % 2):
@@ -93,7 +99,7 @@ def default_config(model_version: str = "v2") -> TrainConfig:
     if model_version == "v1":
         return replace(
             TrainConfig(), model_version="v1", train_percents=(5,),
-            output_dir="artifacts/transformer_v1", batch_size=32, max_epochs=5,
+            output_dir="artifacts/transformers/v1", batch_size=32, max_epochs=5,
             patience=0, schedule="constant", initialize_bias=False,
             tune_thresholds=False, run_test=False,
         )
@@ -303,7 +309,7 @@ def run_experiment(config: TrainConfig | None = None) -> ExperimentResult:
     device = resolve_device(config.device)
     torch.set_num_threads(config.threads)
     data_root = resolve_data_root(config.data_root)
-    split_dir = project_path(config.split_dir)
+    split_dir = resolve_split_dir(config.split_dir, config.seed)
     name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"_seed{config.seed}"
     run_dir = project_path(config.output_dir) / name
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -312,7 +318,8 @@ def run_experiment(config: TrainConfig | None = None) -> ExperimentResult:
     run_config = {
         **asdict(config), "model": config.model_config, "classes": CLASSES,
         "leads": data.leads, "sample_rate": SAMPLE_RATE, "signal_shape": [SIGNAL_LENGTH, N_LEADS],
-        "resolved_data_root": str(data_root), "provenance": data.provenance,
+        "resolved_data_root": str(data_root), "resolved_split_dir": str(split_dir),
+        "provenance": data.provenance,
         "torch_version": str(torch.__version__), "device": str(device),
         "selection_metric": "validation macro AUROC",
         "f1_threshold_selection": "maximum per-class validation F1" if config.tune_thresholds else "fixed 0.5",

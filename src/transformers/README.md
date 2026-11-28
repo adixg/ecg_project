@@ -16,7 +16,7 @@ probabilities. Both models store training-set normalization in checkpoint buffer
 | `data.py` | Split auditing, WFDB loading, memory-mapped datasets, normalization |
 | `metrics.py` | Classwise AUROC, AUPRC, F1, and validation threshold selection |
 | `plotting.py` | Training and test learning curves saved as PNGs |
-| `scratch.md` | Recorded metadata and best metrics from the completed notebook runs |
+| `scratch.md` | Verified two-model, three-seed, seven-fraction benchmark summary |
 
 Importing the package does not start training or read the dataset. The original
 notebooks remain under `notebooks/` as executed experiment records. This package
@@ -44,6 +44,29 @@ From the repository root, using the project Python environment:
 .venv/bin/python -m src.transformers.run --help
 ```
 
+For the complete architecture comparison, run both models with the same training
+and evaluation policy over all 3 seeds and all 7 nested training fractions. This
+trains 42 fresh models; validation selects checkpoints and thresholds before test
+evaluation begins.
+
+```bash
+for model in v1 v2; do
+  for seed in 0 1 42; do
+    .venv/bin/python -m src.transformers.run \
+      --model "$model" --seed "$seed" \
+      --train-percents 1 3 5 10 25 50 100 \
+      --max-epochs 30 --batch-size 64 --patience 8 \
+      --schedule cosine --initialize-bias --tune-thresholds --run-test \
+      --device cuda --output-dir "artifacts/transformers/$model"
+  done
+done
+```
+
+The explicit policy overrides are important: the original V1 and V2 presets
+have different budgets and evaluation behavior. Use the loop above for a direct
+architecture comparison; use the shorter preset commands to reproduce the
+historical notebook protocols.
+
 Direct execution also works:
 
 ```bash
@@ -66,7 +89,7 @@ repository root**, rather than from the shell's current directory.
 | Classifier bias initialization | Standard PyTorch initialization | Training class log-odds |
 | F1 thresholds | Fixed 0.5 | Per-class maximum validation F1 |
 | Final test evaluation | Disabled | Enabled |
-| Output base | `artifacts/transformer_v1` | `artifacts/transformer_v2` |
+| Output base | `artifacts/transformers/v1` | `artifacts/transformers/v2` |
 
 Shared defaults are seed 42, AdamW with learning rate `3e-4` and weight decay
 `1e-2`, unweighted binary cross-entropy, gradient clipping at 1.0, 128-dimensional
@@ -78,13 +101,51 @@ uses 50 overlapping convolutional tokens with a 31-sample receptive field.
 Data defaults to `data/ptbxl`, or the value of `PTBXL_ROOT` when set. Pass
 `--data-root` to override it. The resolver accepts either a folder containing
 `records100/` or a folder with one extracted PTB-XL subdirectory. Splits default
-to `splits/`. Available training percentages are 5, 10, 25, 50, and 100.
+to `splits/`. For seed `S`, the runner automatically selects
+`splits/seed_<S>/`; passing that seed directory explicitly is also supported.
+Available seeds are 0, 1, and 42, and available training percentages are 1, 3,
+5, 10, 25, 50, and 100. A legacy flat split directory containing the CSV files
+is still accepted.
 
 Use `--run-test` to enable v1 test evaluation, `--no-run-test` to disable it for
 v2, and `--tune-thresholds` / `--no-tune-thresholds` to override threshold policy.
 `--patience 0` disables early stopping. `--patch-size` controls the v1 linear
 embedding; v2 has a fixed convolutional stem. All defaults are exposed in
 `TrainConfig` and `default_config()`; CLI arguments override the selected preset.
+
+## CLI flags
+
+Main entry point: `python -m src.transformers.run`. Relative paths resolve from
+the repository root.
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--model` | `v1` or `v2` | `v2` | Select the architecture and its historical preset |
+| `--train-percents` | one or more choices | V1: `5`; V2: `10 25 50` | Fractions chosen from `1 3 5 10 25 50 100` |
+| `--data-root` | path | `PTBXL_ROOT` or `data/ptbxl` | Dataset directory containing `records100/` |
+| `--split-dir` | path | `splits` | Seeded split root or an explicit seed/legacy flat directory |
+| `--output-dir` | path | `artifacts/transformers/<model>` | Base for timestamped runs |
+| `--seed` | choice | `42` | Model/data-loader seed and split selector: `0`, `1`, or `42` |
+| `--batch-size` | integer | V1: `32`; V2: `64` | Training, validation, and test batch size |
+| `--max-epochs` | integer | V1: `5`; V2: `30` | Maximum epochs for each fraction |
+| `--patience` | nonnegative integer | V1: `0`; V2: `8` | Stale epochs before stopping; `0` disables early stopping |
+| `--min-delta` | float | `0.0001` | Validation-AUROC improvement needed to reset patience |
+| `--learning-rate` | float | `0.0003` | Initial AdamW learning rate |
+| `--min-learning-rate` | float | `0.00003` | Final cosine-schedule learning rate |
+| `--weight-decay` | float | `0.01` | AdamW weight decay |
+| `--schedule` | `constant` or `cosine` | V1: `constant`; V2: `cosine` | Learning-rate schedule |
+| `--d-model` | integer | `128` | Token embedding width |
+| `--n-heads` | integer | `4` | Attention heads |
+| `--n-layers` | integer | `3` | Transformer encoder layers |
+| `--dropout` | float | `0.1` | Encoder and classifier dropout |
+| `--patch-size` | integer | `20` | V1 patch length; must divide 1,000; ignored by V2 |
+| `--threads` | positive integer | `4` | PyTorch CPU threads |
+| `--device` | string | `auto` | `auto`, `cpu`, `cuda`, or a device such as `cuda:0` |
+| `--[no-]initialize-bias` | boolean | V1: off; V2: on | Initialize classifier bias from training prevalence |
+| `--[no-]tune-thresholds` | boolean | V1: off; V2: on | Select per-class F1 thresholds on validation |
+| `--[no-]run-test` | boolean | V1: off; V2: on | Evaluate the frozen checkpoint and thresholds on test |
+| `--[no-]plots` | boolean | on | Save training and learning-curve figures |
+| `-h`, `--help` | flag | off | Show CLI help without running an experiment |
 
 ## Python API
 
@@ -130,9 +191,11 @@ match the original notebook implementations.
 CSV targets are used unchanged. The runner checks official folds, patient
 separation, nested training subsets, record identity, signal shape/rate, lead
 order, and finite values. Differences from local metadata are written to
-`label_audit.csv`; the known difference is validation ECG 3799, MI=0 in the CSV
-versus MI=1 under code-presence mapping. Normalization is fitted separately to
-each requested training subset.
+`label_audit.csv`. The known unique differences are validation ECG 3799 (MI=0 in
+the CSV versus MI=1 under code-presence mapping) and training ECG 9822 (CD=0 in
+the CSV versus CD=1); ECG 9822 appears in `train_100` and may also appear in a
+smaller seeded subset. Normalization is fitted separately to each requested
+training subset.
 
 Each model starts from a fresh seed. The highest validation macro AUROC selects
 the checkpoint; for early stopping, an improvement must exceed `min_delta=1e-4`
@@ -152,8 +215,10 @@ source hashes, split and label audits, the signal cache, normalization statistic
 epoch histories, best checkpoints, frozen thresholds, validation predictions and
 metrics, optional test predictions and metrics, aggregate CSVs, and PNG curves.
 The large cache and weights stay in the ignored `artifacts/` directory;
-`scratch.md` preserves the historical best metrics alongside the source code.
+`scratch.md` preserves the verified aggregate, individual-run, and classwise
+results alongside the source code.
 
-The historical results are single-seed experiments and do not establish
-superiority over a CNN baseline. See `scratch.md` for the original budgets,
-selected epochs, and measured outcomes.
+The current benchmark covers both architectures, seeds 0, 1, and 42, and all
+seven training fractions under a shared protocol. See `scratch.md` for artifact
+paths, selected epochs, validation/test metrics, thresholds, timing, and
+reproducibility limitations.

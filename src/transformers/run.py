@@ -17,17 +17,31 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.transformers.training import TrainConfig, default_config, run_experiment
+from src.transformers.training import (
+    AVAILABLE_SPLIT_SEEDS,
+    AVAILABLE_TRAIN_PERCENTS,
+    TrainConfig,
+    default_config,
+    run_experiment,
+)
 
 
 def parse_args(argv: list[str] | None = None) -> TrainConfig:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", choices=("v1", "v2"), default="v2",
                         help="Version preset: v2 uses 10/25/50%%, 30 epochs; v1 uses 5%%, 5 epochs.")
-    parser.add_argument("--train-percents", type=int, nargs="+", choices=(5, 10, 25, 50, 100), default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--train-percents", type=int, nargs="+",
+        choices=AVAILABLE_TRAIN_PERCENTS, default=argparse.SUPPRESS,
+    )
     for flag in ("data-root", "split-dir", "output-dir"):
         parser.add_argument(f"--{flag}", default=argparse.SUPPRESS, help="Relative paths resolve from the repository root.")
-    for flag in ("seed", "batch-size", "max-epochs", "patience", "d-model", "n-heads", "n-layers", "patch-size", "threads"):
+    parser.add_argument(
+        "--seed", type=int, choices=AVAILABLE_SPLIT_SEEDS,
+        default=argparse.SUPPRESS,
+        help="Split and model seed; selects split-dir/seed_<seed> when present.",
+    )
+    for flag in ("batch-size", "max-epochs", "patience", "d-model", "n-heads", "n-layers", "patch-size", "threads"):
         parser.add_argument(f"--{flag}", type=int, default=argparse.SUPPRESS)
     for flag in ("min-delta", "learning-rate", "min-learning-rate", "weight-decay", "dropout"):
         parser.add_argument(f"--{flag}", type=float, default=argparse.SUPPRESS)
